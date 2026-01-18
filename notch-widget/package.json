@@ -1,0 +1,52 @@
+{
+  "name": "notch-widget",
+  "version": "0.2.0",
+  "description": "MacBook notch widget with smooth animations",
+  "main": "main.js",
+  "scripts": {
+    "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "dev": "vite",
+    "build": "vite build",
+    "electron": "electron .",
+    "package": "npm run build && electron-builder build --mac",
+    "package:dir": "npm run build && electron-builder build --mac --dir"
+  },
+  "author": "Ajay More",
+  "license": "MIT",
+  "build": {
+    "appId": "com.notchwidget.app",
+    "productName": "Notch Widget",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "dist/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.0.10",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "framer-motion": "^10.16.16",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

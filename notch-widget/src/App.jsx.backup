@@ -1,0 +1,279 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Home, FileText, Clock, Video, Copy, FolderOpen, Settings } from './Icons';
+import HomeTab from './tabs/HomeTab';
+import NotesTab from './tabs/NotesTab';
+import TimerTab from './tabs/TimerTab';
+import CameraTab from './tabs/CameraTab';
+import SnippetsTab from './tabs/SnippetsTab';
+import TrayTab from './tabs/TrayTab';
+import SettingsTab from './tabs/SettingsTab';
+
+const TABS = [
+  { id: 'home', icon: Home, position: 'left' },
+  { id: 'notes', icon: FileText, position: 'left' },
+  { id: 'timer', icon: Clock, position: 'left' },
+  { id: 'camera', icon: Video, position: 'right' },
+  { id: 'snippets', icon: Copy, position: 'right' },
+  { id: 'tray', icon: FolderOpen, position: 'right' },
+  { id: 'settings', icon: Settings, position: 'right' },
+];
+
+const NOTCH_WIDTH = 200;
+const COLLAPSE_DELAY = 3000; // 3 seconds before collapsing when expanded
+const HIDE_DELAY = 5000; // 5 seconds before hiding when not hovering
+const FULL_HIDE_DELAY = 5000; // 5 seconds before hiding completely
+
+export default function App() {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isVisible, setIsVisible] = useState(false); // Hidden by default
+  const [activeTab, setActiveTab] = useState('home');
+  const [isHovering, setIsHovering] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState(-1);
+  const hideTimeoutRef = useRef(null);
+  const fullHideTimeoutRef = useRef(null);
+  const containerRef = useRef(null);
+  const isHoveringRef = useRef(false);
+  const isExpandedRef = useRef(false);
+
+  // Listen for mouse near top of screen from main process
+  useEffect(() => {
+    const handleMouseNear = (isNear) => {
+      console.log('Mouse near widget:', isNear);
+      if (isNear) {
+        setIsVisible(true);
+        if (fullHideTimeoutRef.current) clearTimeout(fullHideTimeoutRef.current);
+        if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+      } else {
+        // Don't immediately collapse - only hide if not hovering
+        if (!isHoveringRef.current) {
+          setIsVisible(false);
+        }
+      }
+    };
+
+    if (window.notchAPI?.onMouseNearNotch) {
+      window.notchAPI.onMouseNearNotch(handleMouseNear);
+    }
+  }, []);
+
+  // Start hide timer - uses refs to check current state
+  const startHideTimer = useCallback(() => {
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    if (fullHideTimeoutRef.current) clearTimeout(fullHideTimeoutRef.current);
+    
+    hideTimeoutRef.current = setTimeout(() => {
+      // Check ref for current hovering state
+      if (isHoveringRef.current) return;
+      
+      if (isExpandedRef.current) {
+        handleCollapse();
+        // After collapsing, wait before hiding
+        fullHideTimeoutRef.current = setTimeout(() => {
+          if (!isHoveringRef.current) {
+            setIsVisible(false);
+          }
+        }, HIDE_DELAY - COLLAPSE_DELAY);
+      } else {
+        setIsVisible(false);
+      }
+    }, isExpandedRef.current ? COLLAPSE_DELAY : HIDE_DELAY);
+  }, []);
+
+  // Sync refs with state
+  useEffect(() => {
+    isExpandedRef.current = isExpanded;
+  }, [isExpanded]);
+
+  const handleExpand = () => {
+    setIsExpanded(true);
+    isExpandedRef.current = true;
+    window.notchAPI?.expand();
+  };
+
+  const handleCollapse = () => {
+    setIsExpanded(false);
+    isExpandedRef.current = false;
+    window.notchAPI?.collapse();
+  };
+
+  const handleMouseEnter = () => {
+    setIsHovering(true);
+    isHoveringRef.current = true;
+    if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+    if (fullHideTimeoutRef.current) clearTimeout(fullHideTimeoutRef.current);
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovering(false);
+    isHoveringRef.current = false;
+    setHoveredIndex(-1);
+    // Start hide timer after leaving
+    startHideTimer();
+  };
+
+  const handleTabClick = (tabId) => {
+    // Clear ALL timers first
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+    if (fullHideTimeoutRef.current) {
+      clearTimeout(fullHideTimeoutRef.current);
+      fullHideTimeoutRef.current = null;
+    }
+    
+    setActiveTab(tabId);
+    setIsHovering(true);
+    isHoveringRef.current = true;
+    
+    if (!isExpanded) {
+      handleExpand();
+    }
+  };
+
+  const leftTabs = TABS.filter(t => t.position === 'left');
+  const rightTabs = TABS.filter(t => t.position === 'right');
+
+  // Dock magnification helper
+  const getMagnification = (index, totalTabs, isLeft) => {
+    const allTabs = isLeft ? leftTabs : rightTabs;
+    const baseIndex = isLeft ? index : leftTabs.length + index;
+    const hoveredBase = hoveredIndex;
+    
+    if (hoveredIndex === -1) return 1;
+    
+    const distance = Math.abs(baseIndex - hoveredBase);
+    if (distance === 0) return 1.35;
+    if (distance === 1) return 1.15;
+    if (distance === 2) return 1.05;
+    return 1;
+  };
+
+  return (
+    <motion.div
+      ref={containerRef}
+      className={`notch-container ${isExpanded ? 'expanded' : ''}`}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      initial={{ opacity: 1, y: 0 }}
+      animate={{
+        height: isExpanded ? 300 : 36,
+        opacity: 1, // Always fully visible for debugging
+        scale: 1,
+      }}
+      transition={{
+        height: { type: 'spring', stiffness: 400, damping: 30, mass: 0.8 },
+      }}
+    >
+      {/* Dynamic Island style glass pill */}
+      <div className="notch-glass" />
+
+      {/* Collapsed pill with all icons */}
+      <div className="collapsed-pill">
+        <div className="pill-icons-left">
+          {leftTabs.map((tab, index) => (
+            <motion.div
+              key={tab.id}
+              className={`pill-icon ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => handleTabClick(tab.id)}
+              onMouseEnter={() => setHoveredIndex(index)}
+              onMouseLeave={() => setHoveredIndex(-1)}
+              animate={{
+                scale: hoveredIndex === index ? 2.0 : 1,
+              }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+            >
+              <tab.icon size={14} />
+            </motion.div>
+          ))}
+        </div>
+        <div className="pill-icons-right">
+          {rightTabs.map((tab, index) => (
+            <motion.div
+              key={tab.id}
+              className={`pill-icon ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => handleTabClick(tab.id)}
+              onMouseEnter={() => setHoveredIndex(leftTabs.length + index)}
+              onMouseLeave={() => setHoveredIndex(-1)}
+              animate={{
+                scale: hoveredIndex === leftTabs.length + index ? 2.0 : 1,
+              }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+            >
+              <tab.icon size={14} />
+            </motion.div>
+          ))}
+        </div>
+      </div>
+
+      {/* Navigation Bar (expanded) */}
+      <div className="nav-bar">
+        {/* Left tabs */}
+        <div className="nav-group nav-left">
+          {leftTabs.map((tab, index) => (
+            <motion.button
+              key={tab.id}
+              data-tab={tab.id}
+              className={`nav-btn ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => handleTabClick(tab.id)}
+              onMouseEnter={() => setHoveredIndex(index)}
+              onMouseLeave={() => setHoveredIndex(-1)}
+              animate={{
+                scale: getMagnification(index, leftTabs.length, true),
+                y: hoveredIndex === index ? -4 : 0,
+              }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <tab.icon size={16} />
+            </motion.button>
+          ))}
+        </div>
+
+        {/* Right tabs */}
+        <div className="nav-group nav-right">
+          {rightTabs.map((tab, index) => (
+            <motion.button
+              key={tab.id}
+              data-tab={tab.id}
+              className={`nav-btn ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => handleTabClick(tab.id)}
+              onMouseEnter={() => setHoveredIndex(leftTabs.length + index)}
+              onMouseLeave={() => setHoveredIndex(-1)}
+              animate={{
+                scale: getMagnification(index, rightTabs.length, false),
+                y: hoveredIndex === leftTabs.length + index ? -4 : 0,
+              }}
+              transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <tab.icon size={16} />
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      {/* Content Area */}
+      <AnimatePresence mode="wait">
+        {isExpanded && (
+          <motion.div
+            className="content-area"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.2 }}
+          >
+            {activeTab === 'home' && <HomeTab />}
+            {activeTab === 'notes' && <NotesTab />}
+            {activeTab === 'timer' && <TimerTab />}
+            {activeTab === 'camera' && <CameraTab />}
+            {activeTab === 'snippets' && <SnippetsTab />}
+            {activeTab === 'tray' && <TrayTab />}
+            {activeTab === 'settings' && <SettingsTab />}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
